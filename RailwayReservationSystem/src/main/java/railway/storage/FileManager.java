@@ -9,22 +9,19 @@ import org.apache.poi.xssf.usermodel.*;
 
 import java.io.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 
-/**
- * FileManager handles all reading/writing to Excel (.xlsx) files.
- * Uses Apache POI for XLSX file operations.
- */
 public class FileManager {
-    // ========== TRAINS ==========
+
+    // ========== TRAINS with MULTI-CLASS ==========
     public void saveTrains(ArrayList<Train> trains) throws IOException {
         XSSFWorkbook workbook = new XSSFWorkbook();
         XSSFSheet sheet = workbook.createSheet("Trains");
 
-        String[] headers = {"Train Number", "Train Name", "Source", "Destination",
-                "Total Seats", "Available Seats", "Base Fare"};
+        String[] trainHeaders = {"Train Number", "Train Name", "Source", "Destination", "ClassData"};
         Row headerRow = sheet.createRow(0);
-        for (int i = 0; i < headers.length; i++) {
-            headerRow.createCell(i).setCellValue(headers[i]);
+        for (int i = 0; i < trainHeaders.length; i++) {
+            headerRow.createCell(i).setCellValue(trainHeaders[i]);
         }
 
         int rowNum = 1;
@@ -34,11 +31,23 @@ public class FileManager {
             row.createCell(1).setCellValue(t.getTrainName());
             row.createCell(2).setCellValue(t.getSource());
             row.createCell(3).setCellValue(t.getDestination());
-            row.createCell(4).setCellValue(t.getTotalSeats());
-            row.createCell(5).setCellValue(t.getAvailableSeats());
-            row.createCell(6).setCellValue(t.getBaseFare());
+            // Serialize each class as: classType:totalSeats|availSeats|baseFare|seatMap|maxRac|maxWL|confirmed:rac:wl;
+            HashMap<String, ClassSeatInfo> classes = t.getSeatClasses();
+            StringBuilder classData = new StringBuilder();
+            for (String classType : classes.keySet()) {
+                ClassSeatInfo info = classes.get(classType);
+                classData.append(classType).append(":")
+                        .append(info.totalSeats).append("|").append(info.availableSeats).append("|")
+                        .append(info.baseFare).append("|");
+                for (boolean b : info.seats) classData.append(b ? "X" : "O");
+                classData.append("|").append(info.maxRacSeats).append("|").append(info.maxWaitlist).append("|");
+                classData.append(info.confirmedTickets.size()).append(":")
+                        .append(info.racQueue.size()).append(":").append(info.waitlistQueue.size());
+                classData.append(";");
+            }
+            row.createCell(4).setCellValue(classData.toString());
         }
-        for (int i = 0; i < headers.length; i++) sheet.autoSizeColumn(i);
+        for (int i = 0; i < trainHeaders.length; i++) sheet.autoSizeColumn(i);
 
         FileOutputStream fos = new FileOutputStream("data/trains.xlsx");
         workbook.write(fos);
@@ -58,16 +67,32 @@ public class FileManager {
         for (int i = 1; i <= sheet.getLastRowNum(); i++) {
             Row row = sheet.getRow(i);
             if (row != null) {
-                Train t = new Train(
-                        row.getCell(0).getStringCellValue(),
-                        row.getCell(1).getStringCellValue(),
-                        row.getCell(2).getStringCellValue(),
-                        row.getCell(3).getStringCellValue(),
-                        (int) row.getCell(4).getNumericCellValue(),
-                        (int) row.getCell(5).getNumericCellValue(),
-                        row.getCell(6).getNumericCellValue()
-                );
-                trains.add(t);
+                String trainNumber = row.getCell(0).getStringCellValue();
+                String trainName = row.getCell(1).getStringCellValue();
+                String source = row.getCell(2).getStringCellValue();
+                String destination = row.getCell(3).getStringCellValue();
+                String classData = row.getCell(4).getStringCellValue();
+                HashMap<String, ClassSeatInfo> seatClasses = new HashMap<>();
+                for (String block : classData.split(";")) {
+                    if (block.trim().isEmpty()) continue;
+                    String[] mainParts = block.split(":");
+                    String classType = mainParts[0];
+                    String[] details = mainParts[1].split("\\|");
+                    int totalSeats = Integer.parseInt(details[0]);
+                    int availableSeats = Integer.parseInt(details[1]);
+                    double baseFare = Double.parseDouble(details[2]);
+                    String seatMapStr = details[3];
+                    int maxRac = Integer.parseInt(details[4]);
+                    int maxWL = Integer.parseInt(details[5]);
+                    String[] queueSizes = details[6].split(":");
+                    ClassSeatInfo info = new ClassSeatInfo(totalSeats, baseFare, maxRac, maxWL);
+                    info.availableSeats = availableSeats;
+                    for (int j = 0; j < seatMapStr.length(); j++)
+                        info.seats[j] = (seatMapStr.charAt(j) == 'X');
+                    // Note: For demo, just keep queue size meta (tickets reloaded from reservations)
+                    seatClasses.put(classType, info);
+                }
+                trains.add(new Train(trainNumber, trainName, source, destination, seatClasses));
             }
         }
         workbook.close();
@@ -185,13 +210,14 @@ public class FileManager {
         return admins;
     }
 
-    // ========== RESERVATIONS/TICKETS ==========
+    // ========== RESERVATIONS/TICKETS (with all new Ticket fields) ==========
     public void saveReservations(ArrayList<Ticket> tickets) throws IOException {
         XSSFWorkbook workbook = new XSSFWorkbook();
         XSSFSheet sheet = workbook.createSheet("Reservations");
-
-        String[] headers = {"PNR Number", "User ID", "Train Number", "Passenger Name",
-                "Age", "Ticket Class", "Booking Date", "Status", "Fare"};
+        String[] headers = {
+                "PNR Number", "User ID", "Train Number", "Passenger Name", "Age", "Ticket Class",
+                "Booking Date", "Status", "Fare", "Seat Num", "WL Num", "RAC Num", "Journey Date"
+        };
         Row headerRow = sheet.createRow(0);
         for (int i = 0; i < headers.length; i++) {
             headerRow.createCell(i).setCellValue(headers[i]);
@@ -209,6 +235,10 @@ public class FileManager {
             row.createCell(6).setCellValue(t.getBookingDate());
             row.createCell(7).setCellValue(t.getStatus());
             row.createCell(8).setCellValue(t.getFare());
+            row.createCell(9).setCellValue(t.getSeatNum());
+            row.createCell(10).setCellValue(t.getWlNumber());
+            row.createCell(11).setCellValue(t.getRacNumber());
+            row.createCell(12).setCellValue(t.getJourneyDate());
         }
         for (int i = 0; i < headers.length; i++) sheet.autoSizeColumn(i);
 
@@ -232,12 +262,11 @@ public class FileManager {
             if (row != null) {
                 String ticketClass = row.getCell(5).getStringCellValue();
                 Ticket ticket;
-                if ("AC".equalsIgnoreCase(ticketClass)) {
+                if (ticketClass.toUpperCase().startsWith("AC")) {
                     ticket = new ACClassTicket();
                 } else {
                     ticket = new SleeperClassTicket();
                 }
-                // Set common fields
                 ticket.setPnrNumber(row.getCell(0).getStringCellValue());
                 ticket.setUserId(row.getCell(1).getStringCellValue());
                 ticket.setTrainNumber(row.getCell(2).getStringCellValue());
@@ -247,6 +276,10 @@ public class FileManager {
                 ticket.setBookingDate(row.getCell(6).getStringCellValue());
                 ticket.setStatus(row.getCell(7).getStringCellValue());
                 ticket.setFare(row.getCell(8).getNumericCellValue());
+                ticket.setSeatNum((int) row.getCell(9).getNumericCellValue());
+                ticket.setWlNumber((int) row.getCell(10).getNumericCellValue());
+                ticket.setRacNumber((int) row.getCell(11).getNumericCellValue());
+                ticket.setJourneyDate(row.getCell(12).getStringCellValue());
                 tickets.add(ticket);
             }
         }
@@ -259,14 +292,15 @@ public class FileManager {
     public void savePNRRecords(ArrayList<PNRRecord> records) throws IOException {
         XSSFWorkbook workbook = new XSSFWorkbook();
         XSSFSheet sheet = workbook.createSheet("PNR Records");
-
-        String[] headers = {"PNR Number", "Train Number", "User ID", "Passenger Name", "Coach", "Seat Number",
-                "Journey Date", "Booking Status", "Current Status", "Chart Prepared"};
+        String[] headers = {
+                "PNR Number", "Train Number", "User ID", "Passenger Name", "Coach", "Seat Number",
+                "Journey Date", "Ticket Class", "Booking Status", "Current Status",
+                "RAC Number", "WL Number", "Chart Prepared"
+        };
         Row headerRow = sheet.createRow(0);
         for (int i = 0; i < headers.length; i++) {
             headerRow.createCell(i).setCellValue(headers[i]);
         }
-
         int rowNum = 1;
         for (PNRRecord pnr : records) {
             Row row = sheet.createRow(rowNum++);
@@ -277,9 +311,12 @@ public class FileManager {
             row.createCell(4).setCellValue(pnr.getCoach());
             row.createCell(5).setCellValue(pnr.getSeatNumber());
             row.createCell(6).setCellValue(pnr.getJourneyDate());
-            row.createCell(7).setCellValue(pnr.getBookingStatus());
-            row.createCell(8).setCellValue(pnr.getCurrentStatus());
-            row.createCell(9).setCellValue(pnr.isChartPrepared() ? "Yes" : "No");
+            row.createCell(7).setCellValue(pnr.getTicketClass());
+            row.createCell(8).setCellValue(pnr.getBookingStatus());
+            row.createCell(9).setCellValue(pnr.getCurrentStatus());
+            row.createCell(10).setCellValue(pnr.getRacNumber());
+            row.createCell(11).setCellValue(pnr.getWlNumber());
+            row.createCell(12).setCellValue(pnr.isChartPrepared() ? "Yes" : "No");
         }
         for (int i = 0; i < headers.length; i++) sheet.autoSizeColumn(i);
 
@@ -311,7 +348,10 @@ public class FileManager {
                         row.getCell(6).getStringCellValue(),
                         row.getCell(7).getStringCellValue(),
                         row.getCell(8).getStringCellValue(),
-                        "Yes".equalsIgnoreCase(row.getCell(9).getStringCellValue())
+                        row.getCell(9).getStringCellValue(),
+                        (int) row.getCell(10).getNumericCellValue(),
+                        (int) row.getCell(11).getNumericCellValue(),
+                        "Yes".equalsIgnoreCase(row.getCell(12).getStringCellValue())
                 );
                 records.add(pnr);
             }

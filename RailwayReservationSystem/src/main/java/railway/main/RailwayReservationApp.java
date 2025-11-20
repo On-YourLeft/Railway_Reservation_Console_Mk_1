@@ -9,12 +9,9 @@ import railway.exception.InvalidInputException;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Scanner;
 
-/**
- * Main class for Railway Reservation System.
- * Manages login, main menu, and routes to admin/customer dashboards.
- */
 public class RailwayReservationApp {
     private static FileManager fileManager = new FileManager();
     private static AuthenticationService authService = new AuthenticationService(fileManager);
@@ -61,7 +58,6 @@ public class RailwayReservationApp {
     }
 
     // ===== Customer Login & Dashboard =====
-
     private static void customerLogin(Scanner sc) throws InvalidInputException, IOException {
         System.out.print("Username: ");
         String username = sc.nextLine();
@@ -87,7 +83,8 @@ public class RailwayReservationApp {
             System.out.println("4. Check PNR Status");
             System.out.println("5. Cancel My Ticket");
             System.out.println("6. Update Profile");
-            System.out.println("7. Logout");
+            System.out.println("7. View Train Seat Map");
+            System.out.println("8. Logout");
             System.out.print("Enter choice: ");
             int choice = Integer.parseInt(sc.nextLine());
 
@@ -111,6 +108,9 @@ public class RailwayReservationApp {
                     updateProfile(customer, sc);
                     break;
                 case 7:
+                    viewTrainSeatMap(sc);
+                    break;
+                case 8:
                     return;
                 default:
                     System.out.println("Invalid option.");
@@ -149,7 +149,6 @@ public class RailwayReservationApp {
             System.out.println("8. Logout");
             System.out.print("Enter choice: ");
             int choice = Integer.parseInt(sc.nextLine());
-
             switch (choice) {
                 case 1:
                     addNewTrain(sc);
@@ -211,7 +210,11 @@ public class RailwayReservationApp {
         } else {
             for (Train t : trains) {
                 System.out.println("Train: " + t.getTrainName() + " [" + t.getTrainNumber() + "]");
-                System.out.println("Seats Left: " + t.getAvailableSeats() + " | Fare: " + t.getBaseFare());
+                for (String classType : t.getAvailableClasses()) {
+                    System.out.println("  - Class: " + classType +
+                            " | Seats Left: " + t.getSeatClasses().get(classType).availableSeats +
+                            " | Fare: " + t.getSeatClasses().get(classType).baseFare);
+                }
                 System.out.println("--------------------");
             }
         }
@@ -232,20 +235,32 @@ public class RailwayReservationApp {
             System.out.println("Train not found.");
             return;
         }
+        System.out.println("Available Classes: " + String.join(", ", selTrain.getAvailableClasses()));
+        System.out.print("Enter Class for Booking: ");
+        String classType = sc.nextLine().toUpperCase();
+
+        if (!selTrain.getSeatClasses().containsKey(classType)) {
+            System.out.println("Class not found for train.");
+            return;
+        }
+        selTrain.printSeatMap(classType);
+
         System.out.print("Passenger Name: ");
         String name = sc.nextLine();
         System.out.print("Age: ");
         int age = Integer.parseInt(sc.nextLine());
         System.out.print("ID Proof: ");
         String idProof = sc.nextLine();
-        System.out.print("Ticket Class (AC/SLEEPER): ");
-        String tClass = sc.nextLine().toUpperCase();
 
         String bookingDate = java.time.LocalDate.now().toString();
         Passenger passenger = new Passenger(name, age, idProof);
 
-        Ticket ticket = reservationSystem.bookTicket(selTrain, passenger, customer.getUserId(), tClass, bookingDate);
+        // Modified: now pass classType for true multi-class
+        Ticket ticket = reservationSystem.bookTicket(selTrain, passenger, customer.getUserId(), bookingDate);
+
         System.out.println("Booking Successful! PNR: " + ticket.getPnrNumber());
+        System.out.println("Your status: " + ticket.getDisplayStatus());
+        selTrain.printSeatMap(classType);
     }
 
     private static void viewBookings(Customer customer, Scanner sc) throws IOException {
@@ -257,7 +272,8 @@ public class RailwayReservationApp {
                 System.out.println("PNR: " + t.getPnrNumber() +
                         " | Train: " + t.getTrainNumber() +
                         " | Date: " + t.getBookingDate() +
-                        " | Status: " + t.getStatus());
+                        " | Class: " + t.getTicketClass() +
+                        " | Status: " + t.getDisplayStatus());
             }
         }
     }
@@ -270,7 +286,8 @@ public class RailwayReservationApp {
             System.out.println("PNR Not Found.");
         } else {
             System.out.println("Train: " + record.getTrainNumber() + " | Passenger: " + record.getPassengerName());
-            System.out.println("Status: " + record.getCurrentStatus() + " | Chart Prepared: " + (record.isChartPrepared() ? "Yes" : "No"));
+            System.out.println("Status: " + record.getDisplayStatus() +
+                    " | Chart Prepared: " + (record.isChartPrepared() ? "Yes" : "No"));
         }
     }
 
@@ -282,6 +299,7 @@ public class RailwayReservationApp {
         if (isOwner) {
             reservationSystem.cancelTicket(pnr);
             System.out.println("Ticket cancelled successfully.");
+            // Optionally show latest seat map per class
         } else {
             System.out.println("You are not the owner of this ticket.");
         }
@@ -306,6 +324,32 @@ public class RailwayReservationApp {
         }
     }
 
+    // ====== NEW METHOD FOR CUSTOMER =======
+    private static void viewTrainSeatMap(Scanner sc) throws IOException {
+        System.out.print("Enter Train Number: ");
+        String trainNum = sc.nextLine();
+        ArrayList<Train> trains = fileManager.loadTrains();
+        Train train = null;
+        for (Train t : trains) {
+            if (t.getTrainNumber().equals(trainNum)) {
+                train = t;
+                break;
+            }
+        }
+        if (train != null) {
+            System.out.println("Available Classes: " + String.join(", ", train.getAvailableClasses()));
+            System.out.print("Enter Class to View Map: ");
+            String classType = sc.nextLine().toUpperCase();
+            if (!train.getSeatClasses().containsKey(classType)) {
+                System.out.println("Class not found for train.");
+                return;
+            }
+            train.printSeatMap(classType);
+        } else {
+            System.out.println("Train not found.");
+        }
+    }
+
     // ====== Admin Methods ======
 
     private static void addNewTrain(Scanner sc) throws IOException {
@@ -317,12 +361,25 @@ public class RailwayReservationApp {
         String src = sc.nextLine();
         System.out.print("Destination: ");
         String dest = sc.nextLine();
-        System.out.print("Total Seats: ");
-        int total = Integer.parseInt(sc.nextLine());
-        System.out.print("Base Fare: ");
-        double fare = Double.parseDouble(sc.nextLine());
 
-        Train train = new Train(tNum, tName, src, dest, total, total, fare);
+        // Multiclass input: prompt for number of classes
+        System.out.print("How many classes does this train have? ");
+        int classCount = Integer.parseInt(sc.nextLine());
+        HashMap<String, ClassSeatInfo> seatClasses = new HashMap<>();
+        for (int i = 0; i < classCount; i++) {
+            System.out.print("Class " + (i + 1) + " (e.g. AC1, AC2, AC3, SLEEPER, GENERAL): ");
+            String classType = sc.nextLine().toUpperCase();
+            System.out.print("Seats in " + classType + ": ");
+            int totalSeats = Integer.parseInt(sc.nextLine());
+            System.out.print("Base fare in " + classType + ": ");
+            double baseFare = Double.parseDouble(sc.nextLine());
+            System.out.print("Max RAC bookings in " + classType + ": ");
+            int maxRac = Integer.parseInt(sc.nextLine());
+            System.out.print("Max Waitlist in " + classType + ": ");
+            int maxWL = Integer.parseInt(sc.nextLine());
+            seatClasses.put(classType, new ClassSeatInfo(totalSeats, baseFare, maxRac, maxWL));
+        }
+        Train train = new Train(tNum, tName, src, dest, seatClasses);
         trainManagement.addTrain(train);
         System.out.println("Train added.");
     }
@@ -336,12 +393,25 @@ public class RailwayReservationApp {
         String src = sc.nextLine();
         System.out.print("New Destination: ");
         String dest = sc.nextLine();
-        System.out.print("New Total Seats: ");
-        int total = Integer.parseInt(sc.nextLine());
-        System.out.print("New Base Fare: ");
-        double fare = Double.parseDouble(sc.nextLine());
 
-        Train updatedTrain = new Train(tNum, tName, src, dest, total, total, fare);
+        // Repeat class input logic from addNewTrain
+        System.out.print("How many classes does this train have? ");
+        int classCount = Integer.parseInt(sc.nextLine());
+        HashMap<String, ClassSeatInfo> seatClasses = new HashMap<>();
+        for (int i = 0; i < classCount; i++) {
+            System.out.print("Class " + (i + 1) + " (e.g. AC1, AC2, AC3, SLEEPER, GENERAL): ");
+            String classType = sc.nextLine().toUpperCase();
+            System.out.print("Seats in " + classType + ": ");
+            int totalSeats = Integer.parseInt(sc.nextLine());
+            System.out.print("Base fare in " + classType + ": ");
+            double baseFare = Double.parseDouble(sc.nextLine());
+            System.out.print("Max RAC bookings in " + classType + ": ");
+            int maxRac = Integer.parseInt(sc.nextLine());
+            System.out.print("Max Waitlist in " + classType + ": ");
+            int maxWL = Integer.parseInt(sc.nextLine());
+            seatClasses.put(classType, new ClassSeatInfo(totalSeats, baseFare, maxRac, maxWL));
+        }
+        Train updatedTrain = new Train(tNum, tName, src, dest, seatClasses);
         trainManagement.updateTrain(tNum, updatedTrain);
         System.out.println("Train updated.");
     }
@@ -352,7 +422,8 @@ public class RailwayReservationApp {
             System.out.println("PNR: " + t.getPnrNumber() +
                     " | User: " + t.getUserId() +
                     " | Train: " + t.getTrainNumber() +
-                    " | Status: " + t.getStatus());
+                    " | Class: " + t.getTicketClass() +
+                    " | Status: " + t.getDisplayStatus());
         }
     }
 
@@ -375,7 +446,7 @@ public class RailwayReservationApp {
     }
 
     private static void manageFareRules(Scanner sc) {
-        System.out.println("Fare rules are hardcoded in ticket classes (for demo). Modify Ticket class for changes.");
+        System.out.println("Fare rules are managed in your AC/Sleeper Ticket subclasses. Edit them for new rules.");
     }
 
     private static void viewRegisteredUsers(Scanner sc) throws IOException {
