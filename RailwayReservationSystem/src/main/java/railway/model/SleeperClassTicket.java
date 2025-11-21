@@ -24,10 +24,6 @@ public class SleeperClassTicket extends Ticket {
      */
     @Override
     public double calculateFare(double baseFare) {
-        switch (ticketClass.toUpperCase()) {
-            case "SLEEPER": return baseFare * 1.2;
-            case "GENERAL": return baseFare * 1.0;
-            default:        return baseFare * 1.2; // fallback for unknown type
-        }
+        return baseFare * FareConfig.getMultiplier(ticketClass);
     }
 }

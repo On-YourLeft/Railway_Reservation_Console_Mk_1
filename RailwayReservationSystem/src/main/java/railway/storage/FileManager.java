@@ -360,4 +360,29 @@ public class FileManager {
         fis.close();
         return records;
     }
+    // ========== FARE RULES ==========
+    public void saveFareRules(java.util.Map<String, Double> rules) throws IOException {
+        try (java.io.PrintWriter out = new java.io.PrintWriter(new java.io.FileWriter("data/fare_rules.txt"))) {
+            for (String key : rules.keySet()) {
+                out.println(key + "=" + rules.get(key));
+            }
+        }
+    }
+
+    public java.util.HashMap<String, Double> loadFareRules() throws IOException {
+        java.util.HashMap<String, Double> rules = new java.util.HashMap<>();
+        File file = new File("data/fare_rules.txt");
+        if (!file.exists()) return rules; // Return empty, FareConfig will use defaults
+
+        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.FileReader(file))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] parts = line.split("=");
+                if (parts.length == 2) {
+                    rules.put(parts[0], Double.parseDouble(parts[1]));
+                }
+            }
+        }
+        return rules;
+    }
 }

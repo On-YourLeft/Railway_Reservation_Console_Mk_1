@@ -24,11 +24,12 @@ public class ACClassTicket extends Ticket {
      */
     @Override
     public double calculateFare(double baseFare) {
-        switch (ticketClass.toUpperCase()) {
-            case "AC1": return baseFare * 3.5;
-            case "AC2": return baseFare * 2.7;
-            case "AC3": return baseFare * 2.2;
-            default:    return baseFare * 2.5; // fallback for generic "AC"
+        // Use the dynamic multiplier from FareConfig
+        double multiplier = FareConfig.getMultiplier(ticketClass);
+        // Fallback logic if "AC" generic is used (optional)
+        if (multiplier == 1.0 && ticketClass.toUpperCase().startsWith("AC")) {
+            return baseFare * 2.5;
         }
+        return baseFare * multiplier;
     }
 }
