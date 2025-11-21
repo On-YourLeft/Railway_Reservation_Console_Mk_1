@@ -3,7 +3,11 @@ package railway.main;
 import railway.auth.Admin;
 import railway.auth.Customer;
 import railway.entities.ClassSeatInfo;
+import railway.entities.PNRRecord;
 import railway.entities.Train;
+import railway.model.ACClassTicket;
+import railway.model.SleeperClassTicket;
+import railway.model.Ticket;
 import railway.storage.FileManager;
 
 import java.io.File;
@@ -13,13 +17,12 @@ import java.util.HashMap;
 import java.util.Random;
 
 /**
- * UPDATED DATA SEEDER:
- * Generates 200+ Trains, 25 Users, and 2 Admins.
- * Run this 'main' method once to populate your 'data' folder.
+ * EXTENDED DATA SEEDER:
+ * Generates Users, Admins, Trains, AND Active Reservations.
  */
 public class DataSeeder {
 
-    // Major Indian Cities for Route Generation
+    // Major Indian Cities
     private static final String[] CITIES = {
             "New Delhi", "Mumbai Central", "Howrah", "Chennai Central", "Bangalore",
             "Secunderabad", "Ahmedabad", "Pune", "Patna", "Jaipur", "Lucknow",
@@ -29,31 +32,32 @@ public class DataSeeder {
     };
 
     public static void main(String[] args) {
-        System.out.println("=== Railway Data Seeder (Extended) ===");
+        System.out.println("=== Railway Data Seeder (Final) ===");
 
         File directory = new File("data");
-        if (!directory.exists()) {
-            directory.mkdir();
-        }
+        if (!directory.exists()) directory.mkdir();
 
         FileManager fileManager = new FileManager();
 
         try {
-            // 1. Clear old data to prevent duplicates if run multiple times
+            // 1. Clear old data
             new File("data/trains.xlsx").delete();
             new File("data/users.xlsx").delete();
             new File("data/reservations.xlsx").delete();
             new File("data/pnr_records.xlsx").delete();
 
-            // 2. Seed Data
+            // 2. Seed Base Data
             seedAdmins(fileManager);
-            seedUsers(fileManager); // Now generates 25 users
-            seedTrains(fileManager); // Now generates 200 trains
+            ArrayList<Customer> users = seedUsers(fileManager);
+            ArrayList<Train> trains = seedTrains(fileManager);
+
+            // 3. Seed Reservations (The new part)
+            seedReservations(fileManager, trains, users);
 
             System.out.println("\nSUCCESS! Database populated with:");
-            System.out.println("- 2 Admins");
-            System.out.println("- 25 Sample Customers");
-            System.out.println("- 200 Major Trains (Rajdhani, Shatabdi, Express, etc.)");
+            System.out.println("- 2 Admins & " + users.size() + " Customers");
+            System.out.println("- " + trains.size() + " Trains");
+            System.out.println("- 50+ Active Reservations & PNRs");
 
         } catch (IOException e) {
             System.out.println("Error seeding data: " + e.getMessage());
@@ -69,113 +73,155 @@ public class DataSeeder {
         System.out.print(".");
     }
 
-    private static void seedUsers(FileManager fm) throws IOException {
+    private static ArrayList<Customer> seedUsers(FileManager fm) throws IOException {
         ArrayList<Customer> users = new ArrayList<>();
         String[] names = {"Ayush", "Rahul", "Sneha", "Priya", "Vikram", "Anjali", "Rohit", "Kavita", "Amit", "Divya"};
-
-        // Generate 25 Users
         for (int i = 1; i <= 25; i++) {
             String name = names[i % names.length] + " " + (char)('A' + i);
             String uid = "USR" + String.format("%03d", i);
             String phone = "98" + String.format("%08d", i * 1234);
             users.add(new Customer(uid, "User" + i, "pass" + i, phone, "2025-01-" + (i % 28 + 1)));
         }
-
         fm.saveUsers(users);
         System.out.print(".");
+        return users;
     }
 
-    private static void seedTrains(FileManager fm) throws IOException {
+    private static ArrayList<Train> seedTrains(FileManager fm) throws IOException {
         ArrayList<Train> trains = new ArrayList<>();
         Random rand = new Random();
         int trainCount = 0;
 
-        // --- A. Generate Special Trains (Rajdhani/Shatabdi) ---
-        // Link major cities to Delhi (typical Rajdhani routes)
+        // A. Special Trains
         for (int i = 1; i < CITIES.length && trainCount < 50; i++) {
-            // Train from City -> Delhi
-            trains.add(createTrain("12" + String.format("%03d", trainCount),
-                    CITIES[i] + " Rajdhani", CITIES[i], "New Delhi", "RAJDHANI"));
+            trains.add(createTrain("12" + String.format("%03d", trainCount), CITIES[i] + " Rajdhani", CITIES[i], "New Delhi", "RAJDHANI"));
             trainCount++;
-
-            // Train from Delhi -> City
-            trains.add(createTrain("22" + String.format("%03d", trainCount),
-                    CITIES[i] + " Rajdhani", "New Delhi", CITIES[i], "RAJDHANI"));
+            trains.add(createTrain("22" + String.format("%03d", trainCount), CITIES[i] + " Rajdhani", "New Delhi", CITIES[i], "RAJDHANI"));
             trainCount++;
         }
 
-        // --- B. Generate Express/Superfast Trains ---
-        // Randomly connect other cities
+        // B. Express Trains
         while (trainCount < 200) {
             String source = CITIES[rand.nextInt(CITIES.length)];
             String dest = CITIES[rand.nextInt(CITIES.length)];
-
-            if (source.equals(dest)) continue; // Skip invalid routes
+            if (source.equals(dest)) continue;
 
             String type = "EXPRESS";
             int r = rand.nextInt(10);
-            if (r < 2) type = "SHATABDI"; // 20% chance
-            else if (r < 4) type = "GARIB_RATH"; // 20% chance
-            else if (r < 9) type = "EXPRESS"; // 50% chance
-            else type = "GENERAL"; // 10% chance
+            if (r < 2) type = "SHATABDI";
+            else if (r < 4) type = "GARIB_RATH";
+            else if (r < 9) type = "EXPRESS";
+            else type = "GENERAL";
 
             String tNum = (1 + rand.nextInt(9)) + "" + String.format("%04d", rand.nextInt(9999));
             String tName = source + " - " + dest + " " + (type.equals("GENERAL") ? "Passenger" : type);
-
-            // Fix naming for display
-            tName = tName.replace("SHATABDI", "Shatabdi Exp")
-                    .replace("GARIB_RATH", "Garib Rath")
-                    .replace("EXPRESS", "Superfast Exp");
+            tName = tName.replace("SHATABDI", "Shatabdi Exp").replace("GARIB_RATH", "Garib Rath").replace("EXPRESS", "Superfast Exp");
 
             trains.add(createTrain(tNum, tName, source, dest, type));
             trainCount++;
         }
-
-        fm.saveTrains(trains);
+        // Note: We DON'T save trains yet, we wait until seats are booked in seedReservations
         System.out.println(".");
+        return trains;
     }
 
-    // Helper to create a Train object with correct Seat Configuration
+    // ====== NEW: GENERATE RESERVATIONS ======
+    private static void seedReservations(FileManager fm, ArrayList<Train> trains, ArrayList<Customer> users) throws IOException {
+        ArrayList<Ticket> tickets = new ArrayList<>();
+        ArrayList<PNRRecord> pnrRecords = new ArrayList<>();
+        Random rand = new Random();
+
+        System.out.print("Booking Tickets");
+
+        // Generate 60 random bookings
+        for (int i = 0; i < 60; i++) {
+            Train train = trains.get(rand.nextInt(trains.size()));
+            Customer user = users.get(rand.nextInt(users.size()));
+
+            // Pick a random class available on this train
+            ArrayList<String> classes = train.getAvailableClasses();
+            if (classes.isEmpty()) continue;
+            String ticketClass = classes.get(rand.nextInt(classes.size()));
+
+            ClassSeatInfo seatInfo = train.getSeatClasses().get(ticketClass);
+
+            // Only book if seats are available (simplifying to avoid complex RAC logic here)
+            if (seatInfo.availableSeats > 0) {
+                // Find first empty seat
+                int seatNum = -1;
+                for(int s=0; s < seatInfo.seats.length; s++) {
+                    if(!seatInfo.seats[s]) {
+                        seatInfo.seats[s] = true; // Mark occupied
+                        seatNum = s + 1;
+                        seatInfo.availableSeats--;
+                        break;
+                    }
+                }
+
+                if (seatNum != -1) {
+                    // Create Ticket
+                    String pnr = "PNR" + System.currentTimeMillis() + i;
+                    Ticket t;
+                    if(ticketClass.startsWith("AC")) t = new ACClassTicket();
+                    else t = new SleeperClassTicket();
+
+                    t.setPnrNumber(pnr);
+                    t.setUserId(user.getUserId());
+                    t.setTrainNumber(train.getTrainNumber());
+                    t.setPassengerName("Passenger " + i);
+                    t.setAge(20 + rand.nextInt(40));
+                    t.setTicketClass(ticketClass);
+                    t.setBookingDate("2025-11-21");
+                    t.setStatus("CONFIRMED");
+                    t.setFare(seatInfo.baseFare * (ticketClass.equals("AC1")?3.5 : 1.5)); // Approx calc
+                    t.setSeatNum(seatNum);
+                    t.setJourneyDate("2025-11-25");
+
+                    tickets.add(t);
+
+                    // Create PNR Record
+                    PNRRecord p = new PNRRecord(pnr, train.getTrainNumber(), user.getUserId(),
+                            t.getPassengerName(), ticketClass, String.valueOf(seatNum),
+                            t.getJourneyDate(), ticketClass, "BOOKED", "CONFIRMED", 0, 0, false);
+                    pnrRecords.add(p);
+                }
+            }
+            if (i % 10 == 0) System.out.print(".");
+        }
+
+        // Save everything
+        fm.saveReservations(tickets);
+        fm.savePNRRecords(pnrRecords);
+        fm.saveTrains(trains); // Save trains with updated seat maps
+    }
+
     private static Train createTrain(String num, String name, String src, String dest, String type) {
         HashMap<String, ClassSeatInfo> seatClasses = new HashMap<>();
-
-        // Base fares are approximated based on dummy distance logic
         double baseFare = 500.0 + (name.length() * 20);
 
         switch (type) {
             case "RAJDHANI":
-                // AC First, AC 2-Tier, AC 3-Tier
                 seatClasses.put("AC1", new ClassSeatInfo(24, baseFare * 3.0, 5, 10));
                 seatClasses.put("AC2", new ClassSeatInfo(50, baseFare * 2.0, 10, 25));
                 seatClasses.put("AC3", new ClassSeatInfo(120, baseFare * 1.5, 25, 75));
                 break;
-
             case "SHATABDI":
-                // Executive Chair, AC Chair Car
                 seatClasses.put("EXEC", new ClassSeatInfo(40, baseFare * 2.5, 5, 10));
                 seatClasses.put("CC", new ClassSeatInfo(150, baseFare * 1.2, 20, 50));
                 break;
-
             case "GARIB_RATH":
-                // Only AC3 (Economy)
                 seatClasses.put("AC3", new ClassSeatInfo(400, baseFare * 0.8, 50, 150));
                 break;
-
             case "GENERAL":
-                // Only General Unreserved (Simulated as booked seats for system)
                 seatClasses.put("GENERAL", new ClassSeatInfo(200, baseFare * 0.3, 0, 0));
                 break;
-
-            case "EXPRESS":
             default:
-                // Standard mix: AC2, AC3, Sleeper, General
                 seatClasses.put("AC2", new ClassSeatInfo(40, baseFare * 2.0, 10, 20));
                 seatClasses.put("AC3", new ClassSeatInfo(64, baseFare * 1.5, 20, 50));
                 seatClasses.put("SLEEPER", new ClassSeatInfo(300, baseFare * 0.6, 50, 200));
                 seatClasses.put("GENERAL", new ClassSeatInfo(100, baseFare * 0.3, 0, 0));
                 break;
         }
-
         return new Train(num, name, src, dest, seatClasses);
     }
 }
