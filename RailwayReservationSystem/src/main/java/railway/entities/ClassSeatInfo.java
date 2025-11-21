@@ -1,6 +1,5 @@
 package railway.entities;
 
-
 import railway.exception.InvalidInputException;
 import railway.model.Ticket;
 

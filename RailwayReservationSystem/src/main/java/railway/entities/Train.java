@@ -20,8 +20,6 @@ public class Train {
     // Each class type (e.g., "AC1", "AC2", "AC3", "Sleeper", "General")
     private HashMap<String, ClassSeatInfo> seatClasses;
 
-    // Train running history (arrival data demo)
-    private ArrayList<TrainArrivalRecord> arrivalHistory;
 
     public Train(String trainNumber, String trainName, String source, String destination, HashMap<String, ClassSeatInfo> seatClasses) {
         this.trainNumber = trainNumber;
@@ -29,7 +27,6 @@ public class Train {
         this.source = source;
         this.destination = destination;
         this.seatClasses = seatClasses;
-        this.arrivalHistory = new ArrayList<>();
     }
 
     // ============ Basic Info Getters/Setters ============
@@ -43,8 +40,6 @@ public class Train {
     public void setDestination(String destination) { this.destination = destination; }
     public HashMap<String, ClassSeatInfo> getSeatClasses() { return seatClasses; }
     public void setSeatClasses(HashMap<String, ClassSeatInfo> seatClasses) { this.seatClasses = seatClasses; }
-    public ArrayList<TrainArrivalRecord> getArrivalHistory() { return arrivalHistory; }
-    public void addArrivalRecord(TrainArrivalRecord record) { this.arrivalHistory.add(record); }
 
     /** Get all valid class names for selection by user */
     public ArrayList<String> getAvailableClasses() {
